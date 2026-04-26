@@ -228,6 +228,51 @@
       font-variant-numeric: tabular-nums;
     }
     .card.expanded .details { display: block; }
+
+    .card.offline {
+      opacity: 0.55;
+      filter: grayscale(0.8);
+      border-left-color: var(--muted);
+    }
+    .card.offline .stress { color: var(--muted); }
+
+    .offline-badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--bg-soft);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .chat-link {
+      display: block;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--accent);
+      text-decoration: none;
+      text-align: center;
+      font-weight: 500;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      transition: border-color 120ms, background 120ms;
+    }
+    .chat-link:hover {
+      border-color: var(--accent);
+      background: var(--bg-soft);
+    }
+    .card.offline .chat-link {
+      pointer-events: none;
+      color: var(--muted);
+      border-color: var(--border);
+    }
     .details .kv { display: flex; justify-content: space-between; padding: 2px 0; }
     .details .kv .k { color: var(--muted); }
     .details .kv .v { color: var(--text); }
@@ -305,13 +350,14 @@
           <div class="s"><div class="k">Vibration</div><div class="v move">—</div></div>
         </div>
         <div class="vision">Vision: <strong class="vlabel">—</strong> <span class="vconf"></span></div>
-        <div class="alert loading">listening…</div>
+        <div class="alert">listening…</div>
         <div class="details">
           <div class="kv"><span class="k">Tree ID</span><span class="v did"></span></div>
           <div class="kv"><span class="k">Last update</span><span class="v dts"></span></div>
           <div class="kv"><span class="k">Humidity (%)</span><span class="v dlux"></span></div>
           <div class="kv"><span class="k">Vision conf.</span><span class="v dconf"></span></div>
         </div>
+        <a class="chat-link" target="_blank" rel="noopener">Talk to this tree →</a>
       `;
 
       const refs = {
@@ -328,9 +374,12 @@
         dts:   root.querySelector(".dts"),
         dlux:  root.querySelector(".dlux"),
         dconf: root.querySelector(".dconf"),
+        chat:  root.querySelector(".chat-link"),
       };
 
-      root.addEventListener("click", () => {
+      // Expand-on-click, but ignore clicks on the chat link so it can navigate.
+      root.addEventListener("click", (e) => {
+        if (e.target.closest(".chat-link")) return;
         root.classList.toggle("expanded");
       });
 
@@ -339,45 +388,40 @@
 
     function updateCard(entry, tree) {
       const { root, refs } = entry;
-      const cls = "card " + band(tree.stress_index) + (root.classList.contains("expanded") ? " expanded" : "");
+      const offline = tree.online === false;
+      const expanded = root.classList.contains("expanded") ? " expanded" : "";
+      const cls = "card " + band(tree.stress_index) + (offline ? " offline" : "") + expanded;
       if (root.className !== cls) root.className = cls;
 
       const set = (el, v) => { if (el.textContent !== v) el.textContent = v; };
 
-      set(refs.id,    tree.tree_id);
+      const idText = tree.tree_id + (offline ? "  (offline)" : "");
+      set(refs.id,    idText);
       set(refs.loc,   tree.location);
       set(refs.num,   String(tree.stress_index));
-      set(refs.temp,  tree.sensors.temp_c.toFixed(1) + "°C");
-      set(refs.light, tree.sensors.humidity.toFixed(0) + "%");
+      set(refs.temp,  Number(tree.sensors.temp_c).toFixed(1) + "°C");
+      set(refs.light, Number(tree.sensors.humidity).toFixed(0) + "%");
       set(refs.move,  Number(tree.sensors.movement).toFixed(2));
-      set(refs.vlabel, tree.vision.label.replace(/_/g, " "));
-      set(refs.vconf,  "(" + Math.round(tree.vision.confidence * 100) + "%)");
+      set(refs.vlabel, (tree.vision.label || "—").replace(/_/g, " "));
+      set(refs.vconf,  "(" + Math.round((tree.vision.confidence || 0) * 100) + "%)");
+      set(refs.alert,  tree.alert || synthAlert(tree));
       set(refs.did,   tree.tree_id);
-      set(refs.dts,   fmtTime(tree.ts));
-      set(refs.dlux,  tree.sensors.humidity.toFixed(0) + "%");
-      set(refs.dconf, Math.round(tree.vision.confidence * 100) + "%");
-    }
+      set(refs.dts,   tree.ts ? fmtTime(tree.ts) : "—");
+      set(refs.dlux,  Number(tree.sensors.humidity).toFixed(0) + "%");
+      set(refs.dconf, Math.round((tree.vision.confidence || 0) * 100) + "%");
 
-    async function fetchAlertFor(tree, alertEl) {
-      // /alert returns the alert for the active tree only. For neighbors we
-      // synthesize a short status line so cards aren't blank.
-      try {
-        const r = await fetch("/state");
-        if (!r.ok) throw new Error("state");
-        const active = await r.json();
-        if (active.tree_id === tree.tree_id) {
-          const a = await fetch("/alert").then(x => x.json());
-          alertEl.classList.remove("loading");
-          alertEl.textContent = a.alert;
-          return;
-        }
-      } catch (e) { /* ignore, fall through */ }
-      alertEl.classList.remove("loading");
-      alertEl.textContent = synthAlert(tree);
+      // Per-tree chat URL points at the tree's own server, not the aggregator.
+      // The aggregator is only for fleet aggregation; conversations happen
+      // on-device for authenticity.
+      if (tree.host) {
+        const proto = location.protocol === "https:" ? "https:" : "http:";
+        const url = `${proto}//${tree.host}/talk.html?tree_id=${encodeURIComponent(tree.tree_id)}`;
+        if (refs.chat.getAttribute("href") !== url) refs.chat.setAttribute("href", url);
+      }
     }
 
     function synthAlert(t) {
-      const label = t.vision.label.replace(/_/g, " ");
+      const label = (t.vision.label || "—").replace(/_/g, " ");
       if (t.stress_index >= 70) return `URGENT — ${t.tree_id}: ${label}, stress ${t.stress_index}/100.`;
       if (t.stress_index >= 40) return `Watch — ${t.tree_id}: moderate stress (${t.stress_index}/100), ${label}.`;
       return `OK — ${t.tree_id}: ${t.stress_index}/100, ${label}.`;
@@ -400,12 +444,6 @@
         if (!entry) {
           entry = buildCard(tree);
           cards.set(tree.tree_id, entry);
-          // alert fetched once per card lifetime, then refreshed periodically
-          fetchAlertFor(tree, entry.refs.alert);
-          entry._lastAlert = Date.now();
-        } else if (Date.now() - (entry._lastAlert || 0) > 10000) {
-          fetchAlertFor(tree, entry.refs.alert);
-          entry._lastAlert = Date.now();
         }
         updateCard(entry, tree);
 
