@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PearTree — QR generator</title>
+  <script src="/qrcode.js"></script>
+  <style>
+    :root {
+      --bg: #f4f1e8;
+      --panel: #ffffff;
+      --ink: #21302a;
+      --muted: #6c7a72;
+      --line: #d9d4c2;
+      --accent: #3f7a55;
+      --accent-soft: #d8e7dd;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #14191a;
+        --panel: #1d2624;
+        --ink: #e9efeb;
+        --muted: #8fa195;
+        --line: #2a3531;
+        --accent: #6fbf8a;
+        --accent-soft: #243b30;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 32px 20px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+    .lede { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+    .lede strong { color: var(--ink); }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .row.full { grid-template-columns: 1fr; }
+    input[type=text] {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--ink);
+      outline: none;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    input[type=text]:focus { border-color: var(--accent); }
+
+    .preview {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    .qr-frame {
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      max-width: 360px;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .qr-frame svg, .qr-frame img {
+      width: 100%;
+      height: auto;
+      display: block;
+      image-rendering: pixelated;
+    }
+    .url-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      color: var(--muted);
+      word-break: break-all;
+      text-align: center;
+      max-width: 100%;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    @media print {
+      body { background: #fff; padding: 0; }
+      .no-print { display: none !important; }
+      .card { border: 0; padding: 0; }
+      .qr-frame { border: 0; padding: 0; max-width: 480px; }
+      .printable {
+        text-align: center;
+        padding: 60px 20px;
+      }
+      .printable h2 {
+        font-family: inherit;
+        font-size: 28px;
+        margin: 24px 0 4px;
+      }
+      .printable p { color: #444; margin: 4px 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="no-print">PearTree QR generator</h1>
+    <p class="lede no-print">
+      Renders fully offline. Print this page to produce the on-tree placard.
+    </p>
+
+    <div class="card no-print">
+      <div class="row">
+        <div>
+          <label for="host">Host / port</label>
+          <input type="text" id="host" />
+        </div>
+        <div>
+          <label for="treeId">Tree ID</label>
+          <input type="text" id="treeId" value="tree_001" />
+        </div>
+      </div>
+      <div class="row full">
+        <div>
+          <label for="path">Path</label>
+          <input type="text" id="path" value="/talk.html" />
+        </div>
+      </div>
+      <div class="row full">
+        <div>
+          <label for="finalUrl">Resulting URL</label>
+          <input type="text" id="finalUrl" readonly />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="preview printable">
+        <div class="qr-frame" id="qrFrame">
+          <span style="color:#999;font-size:13px">enter a URL above</span>
+        </div>
+        <div class="url-display" id="urlDisplay"></div>
+        <h2 class="printable" id="printTitle" style="display:none">Talk to this tree</h2>
+        <p class="printable" id="printSub" style="display:none"></p>
+        <div class="actions no-print">
+          <button class="primary" onclick="window.print()">Print</button>
+          <button onclick="copyUrl()">Copy URL</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const hostEl = document.getElementById("host");
+    const idEl = document.getElementById("treeId");
+    const pathEl = document.getElementById("path");
+    const finalEl = document.getElementById("finalUrl");
+    const frame = document.getElementById("qrFrame");
+    const urlDisplay = document.getElementById("urlDisplay");
+    const printTitle = document.getElementById("printTitle");
+    const printSub = document.getElementById("printSub");
+
+    // Default host to wherever this page was loaded from (works on the LAN demo).
+    hostEl.value = location.host;
+
+    function buildUrl() {
+      const host = hostEl.value.trim() || location.host;
+      const path = pathEl.value.trim() || "/talk.html";
+      const id = idEl.value.trim();
+      const proto = location.protocol === "https:" ? "https:" : "http:";
+      const sep = path.includes("?") ? "&" : "?";
+      const query = id ? sep + "tree_id=" + encodeURIComponent(id) : "";
+      return `${proto}//${host}${path}${query}`;
+    }
+
+    function render() {
+      const url = buildUrl();
+      finalEl.value = url;
+      urlDisplay.textContent = url;
+      printSub.textContent = (idEl.value.trim() || "") + " · scan to chat";
+      printTitle.style.display = "block";
+      printSub.style.display = "block";
+      try {
+        // type 0 = auto-pick smallest fitting version, ECC L for short URLs
+        const qr = qrcode(0, "M");
+        qr.addData(url);
+        qr.make();
+        // cell size 6, margin 2 modules — gives a chunky scannable QR
+        frame.innerHTML = qr.createSvgTag({
+          cellSize: 6,
+          margin: 2,
+          scalable: true,
+        });
+      } catch (e) {
+        frame.innerHTML = '<span style="color:#a33;font-size:12px">' +
+          (e.message || "could not generate") + "</span>";
+      }
+    }
+
+    async function copyUrl() {
+      try {
+        await navigator.clipboard.writeText(finalEl.value);
+        const btn = event.target;
+        const t = btn.textContent;
+        btn.textContent = "Copied";
+        setTimeout(() => btn.textContent = t, 1200);
+      } catch (e) { /* clipboard blocked */ }
+    }
+    window.copyUrl = copyUrl;
+
+    [hostEl, idEl, pathEl].forEach(el => el.addEventListener("input", render));
+    render();
+  </script>
+</body>
+</html>

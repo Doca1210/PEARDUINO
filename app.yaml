@@ -1,7 +1,6 @@
-name: Trees
-description: Real-time Accelerometer data visualization and movement detection using Modulino Movement sensor
+name: PearTree
+description: EdgeAI sentinel for Barcelona's urban trees — sensor fusion, on-device LLM chat, and ranger dashboard. HackUPC 2026.
 ports: []
 bricks:
 - arduino:web_ui: {}
-- arduino:motion_detection: {}
 icon: 🐍

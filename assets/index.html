@@ -1,51 +1,470 @@
-<!--
-SPDX-FileCopyrightText: Copyright (C) ARDUINO SRL (http://www.arduino.cc)
-
-SPDX-License-Identifier: MPL-2.0
--->
-
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Real-time Accelerometer</title>
-    <link rel="stylesheet" type="text/css" href="style.css">
-    <link rel="icon" type="image/png" href="img/favicon.png">
-  </head>
-  <body>
-    <div class="container">
-        <div class="header">
-            <h1 class="arduino-text">Real-time Accelerometer</h1>
-            <img class="arduino-logo" src="img/RGB-Arduino-Logo_Color Inline Loop.svg" alt="Arduino Logo">
-        </div>
-        <div class="main-content">
-            <div class="controls-section-left">
-                <div class="box-title">Accelerometer Data (m/s2)</div>
-                <canvas id="plot" width="640" height="200"></canvas>
-                <div class="legend">
-                    <div class="legend-item">
-                        <div class="legend-color" style="background-color: #0068C9;"></div>
-                        <span>X</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background-color: #FF9900;"></div>
-                        <span>Y</span>
-                    </div>
-                    <div class="legend-item">
-                        <div class="legend-color" style="background-color: #FF2B2B;"></div>
-                        <span>Z</span>
-                    </div>
-                </div>            </div>
-            <div class="controls-section-right">
-                <div class="box-title">Detected movement (% Confidence)</div>
-                <div id="classes"></div>
-            </div>
-        </div>
-        <div id="error-container" class="error-message" style="display: none;"></div>
-    </div>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PearTree — Ranger Dashboard</title>
+  <style>
+    :root {
+      --bg: #0d1411;
+      --bg-soft: #131c18;
+      --panel: #182520;
+      --panel-2: #1f2e28;
+      --border: #2a3d35;
+      --text: #e6efe8;
+      --muted: #8aa094;
+      --accent: #6fbf8a;
+      --accent-dim: #3a6b51;
+      --green: #4ea872;
+      --amber: #d6a14a;
+      --red: #d96a5b;
+      --shadow: 0 1px 0 rgba(255,255,255,0.03), 0 8px 24px rgba(0,0,0,0.35);
+    }
 
-    <script src="libs/socket.io.min.js"></script>
-    <script src="app.js"></script>
-  </body>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 28px 40px 18px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--bg-soft), var(--bg));
+    }
+    header .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+    }
+    header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      margin: 0;
+    }
+    header h1 .mark {
+      color: var(--accent);
+    }
+    header .tagline {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+    header .meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      gap: 18px;
+      align-items: center;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pill .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    main {
+      padding: 28px 40px 80px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+    }
+    .stat .label {
+      font-size: 11px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .stat .value {
+      font-size: 26px;
+      font-weight: 600;
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat .sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left-width: 4px;
+      border-radius: 10px;
+      padding: 18px 18px 14px;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: border-color 120ms ease, transform 120ms ease;
+    }
+    .card:hover { border-color: var(--accent-dim); }
+    .card.green  { border-left-color: var(--green);  }
+    .card.amber  { border-left-color: var(--amber);  }
+    .card.red    { border-left-color: var(--red);    }
+
+    .card .row1 {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .card .id {
+      font-size: 12px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .card .loc {
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .card .stress {
+      font-size: 38px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    .card.green .stress  { color: var(--green); }
+    .card.amber .stress  { color: var(--amber); }
+    .card.red   .stress  { color: var(--red);   }
+    .card .stress small {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 500;
+      margin-left: 2px;
+    }
+
+    .sensors {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 14px;
+      font-size: 13px;
+    }
+    .sensors .s {
+      background: var(--panel-2);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .sensors .s .k {
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .sensors .s .v {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      margin-top: 2px;
+    }
+
+    .vision {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .vision strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .alert {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+      min-height: 20px;
+    }
+    .alert.loading { font-style: italic; opacity: 0.5; }
+
+    .details {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      display: none;
+      font-variant-numeric: tabular-nums;
+    }
+    .card.expanded .details { display: block; }
+    .details .kv { display: flex; justify-content: space-between; padding: 2px 0; }
+    .details .kv .k { color: var(--muted); }
+    .details .kv .v { color: var(--text); }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 80px 0;
+    }
+
+    @media (max-width: 720px) {
+      header, main { padding-left: 18px; padding-right: 18px; }
+      header { flex-direction: column; gap: 8px; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>Tree<span class="mark">Mesh</span></h1>
+      <span class="tagline">Ranger console · Barcelona</span>
+    </div>
+    <div class="meta">
+      <span class="pill"><span class="dot" id="livePulse"></span><span id="liveLabel">live</span></span>
+      <span id="lastUpdate">—</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary" id="summary">
+      <div class="stat"><div class="label">Trees online</div><div class="value" id="statCount">—</div><div class="sub">in mesh</div></div>
+      <div class="stat"><div class="label">Avg stress</div><div class="value" id="statAvg">—</div><div class="sub">0–100</div></div>
+      <div class="stat"><div class="label">Critical</div><div class="value" id="statCrit">—</div><div class="sub">stress &gt; 70</div></div>
+      <div class="stat"><div class="label">Hottest</div><div class="value" id="statHot">—</div><div class="sub" id="statHotSub">°C</div></div>
+    </section>
+
+    <section class="grid" id="grid">
+      <div class="empty" id="empty">Loading fleet…</div>
+    </section>
+  </main>
+
+  <script>
+    const POLL_MS = 2000;
+    const cards = new Map();   // tree_id -> {root, refs, expanded}
+
+    function band(stress) {
+      if (stress >= 70) return "red";
+      if (stress >= 40) return "amber";
+      return "green";
+    }
+
+    function fmtTime(iso) {
+      try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      } catch (e) { return iso; }
+    }
+
+    function buildCard(tree) {
+      const root = document.createElement("div");
+      root.className = "card " + band(tree.stress_index);
+      root.dataset.id = tree.tree_id;
+
+      root.innerHTML = `
+        <div class="row1">
+          <div>
+            <div class="id"></div>
+            <div class="loc"></div>
+          </div>
+          <div class="stress"><span class="num">0</span><small>/100</small></div>
+        </div>
+        <div class="sensors">
+          <div class="s"><div class="k">Temp</div><div class="v temp">—</div></div>
+          <div class="s"><div class="k">Humidity</div><div class="v light">—</div></div>
+          <div class="s"><div class="k">Vibration</div><div class="v move">—</div></div>
+        </div>
+        <div class="vision">Vision: <strong class="vlabel">—</strong> <span class="vconf"></span></div>
+        <div class="alert loading">listening…</div>
+        <div class="details">
+          <div class="kv"><span class="k">Tree ID</span><span class="v did"></span></div>
+          <div class="kv"><span class="k">Last update</span><span class="v dts"></span></div>
+          <div class="kv"><span class="k">Humidity (%)</span><span class="v dlux"></span></div>
+          <div class="kv"><span class="k">Vision conf.</span><span class="v dconf"></span></div>
+        </div>
+      `;
+
+      const refs = {
+        id:    root.querySelector(".id"),
+        loc:   root.querySelector(".loc"),
+        num:   root.querySelector(".stress .num"),
+        temp:  root.querySelector(".temp"),
+        light: root.querySelector(".light"),
+        move:  root.querySelector(".move"),
+        vlabel: root.querySelector(".vlabel"),
+        vconf: root.querySelector(".vconf"),
+        alert: root.querySelector(".alert"),
+        did:   root.querySelector(".did"),
+        dts:   root.querySelector(".dts"),
+        dlux:  root.querySelector(".dlux"),
+        dconf: root.querySelector(".dconf"),
+      };
+
+      root.addEventListener("click", () => {
+        root.classList.toggle("expanded");
+      });
+
+      return { root, refs };
+    }
+
+    function updateCard(entry, tree) {
+      const { root, refs } = entry;
+      const cls = "card " + band(tree.stress_index) + (root.classList.contains("expanded") ? " expanded" : "");
+      if (root.className !== cls) root.className = cls;
+
+      const set = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+
+      set(refs.id,    tree.tree_id);
+      set(refs.loc,   tree.location);
+      set(refs.num,   String(tree.stress_index));
+      set(refs.temp,  tree.sensors.temp_c.toFixed(1) + "°C");
+      set(refs.light, tree.sensors.humidity.toFixed(0) + "%");
+      set(refs.move,  Number(tree.sensors.movement).toFixed(2));
+      set(refs.vlabel, tree.vision.label.replace(/_/g, " "));
+      set(refs.vconf,  "(" + Math.round(tree.vision.confidence * 100) + "%)");
+      set(refs.did,   tree.tree_id);
+      set(refs.dts,   fmtTime(tree.ts));
+      set(refs.dlux,  tree.sensors.humidity.toFixed(0) + "%");
+      set(refs.dconf, Math.round(tree.vision.confidence * 100) + "%");
+    }
+
+    async function fetchAlertFor(tree, alertEl) {
+      // /alert returns the alert for the active tree only. For neighbors we
+      // synthesize a short status line so cards aren't blank.
+      try {
+        const r = await fetch("/state");
+        if (!r.ok) throw new Error("state");
+        const active = await r.json();
+        if (active.tree_id === tree.tree_id) {
+          const a = await fetch("/alert").then(x => x.json());
+          alertEl.classList.remove("loading");
+          alertEl.textContent = a.alert;
+          return;
+        }
+      } catch (e) { /* ignore, fall through */ }
+      alertEl.classList.remove("loading");
+      alertEl.textContent = synthAlert(tree);
+    }
+
+    function synthAlert(t) {
+      const label = t.vision.label.replace(/_/g, " ");
+      if (t.stress_index >= 70) return `URGENT — ${t.tree_id}: ${label}, stress ${t.stress_index}/100.`;
+      if (t.stress_index >= 40) return `Watch — ${t.tree_id}: moderate stress (${t.stress_index}/100), ${label}.`;
+      return `OK — ${t.tree_id}: ${t.stress_index}/100, ${label}.`;
+    }
+
+    function renderFleet(trees, alertCache) {
+      // sort: highest stress first, stable on tree_id
+      trees.sort((a, b) => b.stress_index - a.stress_index || a.tree_id.localeCompare(b.tree_id));
+
+      const grid = document.getElementById("grid");
+      const empty = document.getElementById("empty");
+      if (empty && grid.contains(empty)) grid.removeChild(empty);
+
+      const seen = new Set();
+
+      // Update or insert cards in sorted order.
+      trees.forEach((tree, idx) => {
+        seen.add(tree.tree_id);
+        let entry = cards.get(tree.tree_id);
+        if (!entry) {
+          entry = buildCard(tree);
+          cards.set(tree.tree_id, entry);
+          // alert fetched once per card lifetime, then refreshed periodically
+          fetchAlertFor(tree, entry.refs.alert);
+          entry._lastAlert = Date.now();
+        } else if (Date.now() - (entry._lastAlert || 0) > 10000) {
+          fetchAlertFor(tree, entry.refs.alert);
+          entry._lastAlert = Date.now();
+        }
+        updateCard(entry, tree);
+
+        // re-order: ensure cards appear in the sorted order
+        const expected = grid.children[idx];
+        if (expected !== entry.root) {
+          grid.insertBefore(entry.root, expected || null);
+        }
+      });
+
+      // remove vanished trees
+      for (const [id, entry] of cards) {
+        if (!seen.has(id)) {
+          if (entry.root.parentNode) entry.root.parentNode.removeChild(entry.root);
+          cards.delete(id);
+        }
+      }
+    }
+
+    function renderSummary(trees) {
+      const n = trees.length;
+      document.getElementById("statCount").textContent = String(n);
+      if (!n) {
+        document.getElementById("statAvg").textContent = "—";
+        document.getElementById("statCrit").textContent = "—";
+        document.getElementById("statHot").textContent = "—";
+        return;
+      }
+      const avg = Math.round(trees.reduce((a, t) => a + t.stress_index, 0) / n);
+      const crit = trees.filter(t => t.stress_index >= 70).length;
+      const hottest = trees.reduce((a, b) => a.sensors.temp_c > b.sensors.temp_c ? a : b);
+      document.getElementById("statAvg").textContent = String(avg);
+      document.getElementById("statCrit").textContent = String(crit);
+      document.getElementById("statHot").textContent = hottest.sensors.temp_c.toFixed(1) + "°C";
+      document.getElementById("statHotSub").textContent = hottest.tree_id;
+    }
+
+    let pulseOk = true;
+    async function tick() {
+      try {
+        const r = await fetch("/trees", { cache: "no-store" });
+        if (!r.ok) throw new Error("trees " + r.status);
+        const trees = await r.json();
+        renderSummary(trees);
+        renderFleet(trees);
+        document.getElementById("lastUpdate").textContent =
+          "updated " + new Date().toLocaleTimeString();
+        document.getElementById("liveLabel").textContent = "live";
+        document.getElementById("livePulse").style.background = "var(--accent)";
+        pulseOk = true;
+      } catch (e) {
+        document.getElementById("liveLabel").textContent = "offline";
+        document.getElementById("livePulse").style.background = "var(--red)";
+        pulseOk = false;
+      } finally {
+        setTimeout(tick, POLL_MS);
+      }
+    }
+    tick();
+  </script>
+</body>
 </html>
