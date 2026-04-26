@@ -1,90 +1,105 @@
-# Real Time Accelerometer Data
+# 🌳 PearTree — Real-Time Urban Tree Health Monitoring System
 
-The **Real Time Accelerometer Data** example records accelerometer data from the [Modulino® Movement](https://store.arduino.cc/products/modulino-movement) node, and streams it to a web interface.
+PearTree is a real-time embedded system that monitors the health of urban trees using low-cost sensors and edge computing. It transforms each tree into a continuously observed biological sensor, combining structural vibration analysis with environmental data to compute a live tree stress index.
 
-The accelerometer data recorded from the Modulino® is then processed by a pre-trained model that classifies different types of movement.
+The system is designed for cities like Barcelona, where heatwaves, drought, and hidden structural decay are increasingly threatening urban vegetation.
 
-## Bricks Used
+---
 
-- `motion_detection` - processes accelerometer data to identify specific motion patterns, using a pre-trained model.
-- `web_ui` - used to host a web server on the board, serving HTML, CSS & JavaScript files.
+## 🚨 Problem
 
-## AI Model Used
+Urban trees suffer from:
+- Heat stress and drought conditions
+- Internal decay and hollowing (invisible externally)
+- Structural weakening due to environmental stress
+- Lack of continuous monitoring systems
 
-The model used for this example is trained by the Edge Impulse team: 
+Current solutions are:
+- Manual inspections (rare, subjective, expensive)
+- Satellite imaging (low resolution, indirect)
+- Reactive rather than continuous
 
-The pre-built dataset features four types of movement:
-- **Up and down movement** - move the board up and down (lift it and put it down)
-- **Snake movement** - move the board across a desk like a snake
-- **Wave movement** - move the board left and right in a hand waving motion 
-- **Idle** - no movement recorded
+---
 
-To read more about the model, visit the following link:
-- [Motion Classification - Continuous Motion Recognition](https://studio.edgeimpulse.com/public/497631/latest)
+## 💡 Solution
 
+PearTree turns every tree into a real-time monitoring node:
 
-## Hardware and Software Requirements
+- Measures **structural response** using vibration sensing (accelerometer)
+- Measures **environmental stress** using temperature & humidity
+- Computes a **live Stress Index (0–100)**
+- Translates health state into an intuitive “Tree Mood”
+- Provides a public interface and chatbot for interaction
 
-### Hardware
+---
 
-- Arduino® UNO Q
-- USB-C® cable
-- [Modulino® Movement](https://store.arduino.cc/products/modulino-movement)
-- Qwiic cable
+## 🧠 Key Idea
 
-### Software
+Instead of treating trees as passive objects, PearTree treats them as:
+> continuously measurable living infrastructure nodes inside a city-wide sensor network
 
-- Arduino App Lab
+---
 
-## How to Use the Example
+## ⚙️ Hardware
 
-1. Connect the board to a computer using a USB-C® cable.
-2. Connect the Modulino® Movement to the board using the Qwiic connector.
-    ![Connecting Modulino® Movement](assets/docs_assets/hardware-setup.png)
+- Arduino UNO Q
+- Modulino Movement (3-axis accelerometer)
+- Modulino Thermo (temperature + humidity)
+- Qwiic I2C connections
 
-3. Launch the App by clicking on the "Play" button in the top right corner. Wait until the App has launched.
-    ![Launching an App](assets/docs_assets/launch-app.png)
+---
 
-4. Open a browser and access `<UNO-Q-IP-ADDRESS>:7000` (this may also launch automatically).
-5. View the data from the Modulino® in real time!
+## 🧮 System Overview
 
-## How it Works
+### 1. Data Acquisition
+- Vibration sampled at ~62.5 Hz
+- Temperature & humidity sampled periodically
 
-This example uses the `motion_detection` Brick to classify incoming accelerometer data, and the `web_ui` Brick display the data on a web page.
+### 2. Signal Processing
+- Acceleration magnitude extraction
+- Sliding window buffering (128 samples)
+- Noise filtering and stabilization
 
-The data is recorded from a Modulino® Movement, connected to the UNO Q's Qwiic port, and sent to the Linux side using the **Bridge** tool.
+### 3. Feature Extraction
+- RMS energy
+- FFT dominant frequency
+- Spectral centroid
+- Temporal decay rate
 
-The web page displays the raw `x`, `y` and `z` values from the accelerometer, and graphs the values on a chart. 
-It also shows the results of processing the data using a pre-trained model (up and down, snake, wave, idle).
+### 4. Anomaly Detection
+- Baseline learned per tree
+- Mahalanobis distance used for deviation scoring
 
-![How Motion Detection works](assets/docs_assets/motion-detection.png)
+### 5. Environmental Stress Model
+- Temperature rate of change (°C/s)
+- Humidity deviation from optimal range (40–70%)
 
-## Understanding the Code
+### 6. Stress Index
+Combined score:
+- Structural stress (vibration)
+- Environmental stress (heat + humidity)
 
-The Real-Time Accelerometer example is a bit more advanced on the Python side, as it includes:
-- A pre-trained model that is used to classify different types of movement, using the `motion_detection` Brick.
-- A web API for fetching the latest classification and recent raw samples.
-- A web UI that renders the data and displays what type of motion was detected.
+Output: **0–100 Tree Stress Index**
 
-### Linux (Python) Side
+---
 
-The `main.py` contains several functions and integrations that make live motion detection and visualization possible.
+## 🌿 Interactive Layer
 
-- `motion_detection = MotionDetection(confidence=CONFIDENCE)` – initializes the Brick with a confidence threshold, which controls how certain the model must be before classifying movement types such as *idle*, *snake*, *updown*, and *wave*.
-- `def on_movement_detected(classification: dict):` – this callback function receives classification results, updates a pandas data frame (`detection_df`) with the latest probabilities, and broadcasts the data to the Web UI for real-time display.
-- `motion_detection.on_movement_detection('idle'|'snake'|'updown'|'wave', on_movement_detected)` – registers motion detection callbacks for all supported movement types, ensuring the app reacts whenever new motion is detected.
-- `Bridge.provide("record_sensor_movement", record_sensor_movement)` – data is received from the microcontroller.
-- `web_ui.expose_api("GET", "/detection", _get_detection)` and `web_ui.expose_api("GET", "/samples", _get_samples)` – exposes two **HTTP API endpoints**:
-  - `/detection` returns the latest motion classification probabilities.
-  - `/samples` returns a list of recent accelerometer samples from the memory buffer.
+Each tree has a public-facing interface that:
+- Displays real-time health status
+- Converts stress index into an intuitive “mood”
+- Allows users to interact with a chatbot powered by a generative AI API
 
-> For a better understanding of the Python application, view the `main.py` file, which includes detailed logging and comments explaining each step.
+The chatbot is grounded in live sensor data and reflects the current physiological state of the tree.
 
-### Microcontroller (Sketch) Side
+---
 
-The microcontroller side is a bit easier to understand, where there are essentially three things happening:
+## 🤖 AI Components
 
-- `x_accel = movement.getX();` - the `x` axis value is recorded from the accelerometer (Modulino® Movement).  
-- `y_accel = movement.getY();` - the `y` axis value is recorded from the accelerometer (Modulino® Movement).
-- `z_accel = movement.getZ();` - the `z` axis value is recorded from the accelerometer (Modulino® Movement).
-- `Bridge.notify("record_sensor_movement", x_accel, y_accel, z_accel);` - the data is sent to the Python application using the Bridge tool.
+- Unsupervised anomaly detection (no labeled dataset required)
+- Edge-based feature extraction
+- Generative AI chatbot conditioned on tree health state
+
+---
+
+## 🌐 Data Flow

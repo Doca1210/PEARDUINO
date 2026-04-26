@@ -17,8 +17,11 @@ web_ui = WebUI()
 TREE_ID = "tree_001"
 LOCATION = "Plaça Reial #3"
 
-BUFFER_SIZE = 128
-STEP = 32                 # sliding window step
+# Sampling: 62.5 Hz
+FS = 62.5
+
+BUFFER_SIZE = 128      # ~2 seconds
+STEP = 32              # ~0.5 sec updates
 BASELINE_SAMPLES = 80
 
 buffer = deque(maxlen=BUFFER_SIZE)
@@ -31,7 +34,7 @@ cov_inv = None
 
 latest_temp = None
 latest_humidity = None
-temp_min = None
+temp_buffer = deque(maxlen=30)  # ~30 sec (assuming ~1Hz thermo updates)
 
 sample_count = 0
 
@@ -41,13 +44,13 @@ sample_count = 0
 def extract_features(signal):
     signal = np.array(signal)
 
-    # remove DC (gravity / bias)
+    # remove gravity / DC
     signal = signal - np.mean(signal)
 
     rms = np.sqrt(np.mean(signal**2))
 
     fft_vals = np.abs(np.fft.rfft(signal))
-    freqs = np.fft.rfftfreq(len(signal), d=1/62.5)
+    freqs = np.fft.rfftfreq(len(signal), d=1/FS)
 
     dom_freq = freqs[np.argmax(fft_vals)]
 
@@ -84,7 +87,6 @@ def update_baseline(x):
         return
 
     baseline.append(x)
-
     logger.info(f"Baseline: {len(baseline)}/{BASELINE_SAMPLES}")
 
     if len(baseline) >= BASELINE_SAMPLES:
@@ -93,34 +95,62 @@ def update_baseline(x):
         mu = np.mean(data, axis=0)
         cov = np.cov(data, rowvar=False)
 
-        # stabilize covariance
         cov += np.eye(cov.shape[0]) * 1e-6
         cov_inv = np.linalg.pinv(cov)
 
         baseline_ready = True
-        logger.info("✅ Baseline established")
+        logger.info("Baseline established")
 
 
 # -----------------------------
-# STRESS INDEX (FIXED)
+# TEMPERATURE RATE
+# -----------------------------
+def temp_rate():
+    if len(temp_buffer) < 2:
+        return 0.0
+
+    (t1, ts1) = temp_buffer[0]
+    (t2, ts2) = temp_buffer[-1]
+
+    dt = ts2 - ts1
+    if dt <= 0:
+        return 0.0
+
+    return (t2 - t1) / dt
+
+
+# -----------------------------
+# STRESS INDEX (PHYSICAL MODEL)
 # -----------------------------
 def compute_stress(vib_score, temp, humidity):
-    global temp_min
-
     if temp is None or humidity is None:
         return 0
 
-    if temp_min is None:
-        temp_min = temp
+    # --- vibration normalization ---
+    vib_norm = min(vib_score / 10.0, 1.0)
 
-    temp_min = min(temp_min, temp)
-    delta = temp - temp_min
+    # --- temperature rate ---
+    rate = temp_rate()
+    temp_norm = min(max(rate - 0.01, 0) / 0.1, 1.0)
 
-    vib_part = min(vib_score * 15, 50)
-    temp_part = min(delta * 6, 30)
-    hum_part = max(0, (50 - humidity) * 0.5)
+    # --- humidity deviation ---
+    if humidity < 40:
+        hum_dev = (40 - humidity) / 40
+    elif humidity > 70:
+        hum_dev = (humidity - 70) / 30
+    else:
+        hum_dev = 0
 
-    return int(min(vib_part + temp_part + hum_part, 100))
+    hum_dev = min(hum_dev, 1.0)
+
+    # --- combined stress ---
+    stress = int(100 * (
+        0.5 * vib_norm +
+        0.3 * temp_norm +
+        0.2 * hum_dev
+    ))
+
+    return stress
 
 
 # -----------------------------
@@ -158,7 +188,7 @@ def build_tree_state(vib_score):
 
 
 # -----------------------------
-# PROCESS WINDOW (CONTINUOUS)
+# PROCESS WINDOW
 # -----------------------------
 def process_window():
     if len(buffer) < BUFFER_SIZE:
@@ -176,11 +206,10 @@ def process_window():
 
     history.append(state)
 
-    # send to UI
     try:
         web_ui.send_message("tree_state", state)
     except Exception:
-        logger.debug("WebSocket send failed")
+        logger.debug("WS send failed")
 
     logger.info(json.dumps(state))
 
@@ -191,13 +220,15 @@ def process_window():
 def vibration_sample(x, y, z):
     global sample_count
 
-    # magnitude of acceleration
+    # magnitude
     mag = np.sqrt(x*x + y*y + z*z)
+
+    # remove gravity
+    mag = mag - 1.0
 
     buffer.append(mag)
     sample_count += 1
 
-    # sliding window processing
     if len(buffer) == BUFFER_SIZE and sample_count % STEP == 0:
         process_window()
 
@@ -208,6 +239,8 @@ def thermo_sample(temp, humidity):
     latest_temp = temp
     latest_humidity = humidity
 
+    temp_buffer.append((temp, time.time()))
+
     try:
         web_ui.send_message("thermo", {
             "temp": temp,
@@ -215,13 +248,13 @@ def thermo_sample(temp, humidity):
             "ts": int(time.time() * 1000)
         })
     except Exception:
-        logger.debug("Thermo WS send failed")
+        logger.debug("Thermo WS failed")
 
     logger.info(f"Thermo → temp={temp}°C humidity={humidity}%")
 
 
 # -----------------------------
-# API (FIXED HISTORY)
+# API
 # -----------------------------
 def get_history():
     return list(history)
@@ -235,7 +268,7 @@ web_ui.expose_api("GET", "/history", get_history)
 try:
     Bridge.provide("vibration_sample", vibration_sample)
     Bridge.provide("thermo_sample", thermo_sample)
-    logger.info("✅ Bridge connected")
+    logger.info("Bridge connected")
 except RuntimeError:
     logger.warning("Bridge already registered")
 
@@ -243,5 +276,5 @@ except RuntimeError:
 # -----------------------------
 # START
 # -----------------------------
-logger.info("🌳 Escorça running (continuous mode)")
+logger.info("Escorça running (continuous + physical model)")
 App.run()
